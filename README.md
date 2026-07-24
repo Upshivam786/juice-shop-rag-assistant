@@ -42,6 +42,34 @@ A production-ready Retrieval-Augmented Generation (RAG) assistant integrated int
 - ✅ Docker Compose deployment
 - ✅ 27 automated tests
 
+## 🎯 Skills Demonstrated
+
+This project demonstrates practical experience in:
+- FastAPI backend development
+- Retrieval-Augmented Generation (RAG)
+- Vector databases (ChromaDB)
+- LLM integration (OpenRouter)
+- OpenAI-compatible API design
+- Prompt engineering
+- Server-Sent Events (SSE)
+- Docker & Docker Compose
+- Angular frontend integration
+- API security & rate limiting
+- Automated testing with Pytest
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Backend | FastAPI |
+| Vector Database | ChromaDB |
+| Embeddings | Sentence Transformers |
+| LLM | OpenRouter (Qwen 3-8B) |
+| Frontend | Angular (OWASP Juice Shop) |
+| Deployment | Docker Compose |
+| Testing | Pytest |
+| Language | Python |
+
 ## 🏗 Architecture
 
 ```mermaid
@@ -134,6 +162,15 @@ The focus was on:
 - Maintaining multi-turn conversation context without a heavy memory framework
 - Integrating a custom backend into Juice Shop's Angular frontend as a non-intrusive side panel, without disrupting the existing UI
 
+## 📈 Results
+
+After integrating the custom RAG backend:
+- Product responses are grounded in the Juice Shop catalog instead of relying on model memory
+- The existing Angular frontend continues to work using OpenAI-compatible APIs
+- Streaming responses improve the chat experience
+- Multi-turn conversations maintain context across follow-up questions
+- The architecture remains modular, making the backend reusable in other applications
+
 ## Testing
 
 The project includes automated tests covering:
@@ -145,17 +182,16 @@ The project includes automated tests covering:
 
 27 tests total, run with `pytest tests/ -v` — see [MIGRATION.md](./MIGRATION.md) for setup.
 
-## Engineering Takeaways
+## 📚 What I Learned
 
-This project provided practical experience in:
+Building this project gave me hands-on experience with:
 - Designing OpenAI-compatible APIs
-- Building production-style RAG systems
-- Vector search and retrieval optimization
+- Developing production-style RAG systems
+- Optimizing retrieval beyond naïve vector search
 - Streaming LLM responses with Server-Sent Events
-- FastAPI service architecture
-- Dockerized deployment
-- Angular–backend integration
-- Testing AI-powered services
+- Structuring modular FastAPI services
+- Integrating AI backends with existing frontends
+- Testing and documenting AI-powered systems
 
 ## Roadmap
 
