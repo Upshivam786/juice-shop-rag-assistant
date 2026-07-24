@@ -1,0 +1,85 @@
+# Point 12 (Configuration) + Point 15 (Deployment) additions to your existing
+# docker-compose.rag.yml. This is NOT a full replacement file - it shows the
+# `assistant` service with everything new added, and the compose-level
+# additions (restart policy, healthchecks). Merge the highlighted parts into
+# your real docker-compose.rag.yml; juice-shop and chroma services are
+# unchanged except for restart policy and (for chroma) a healthcheck.
+#
+# Secrets separation (Point 12): create a git-ignored `.env.secrets` file
+# containing only OPENROUTER_API_KEY and INGEST_API_KEY, and keep
+# non-secret tuning values (log level, rate limits, model name) directly in
+# compose. This means your secrets file can be excluded from version
+# control while the rest of the config stays reviewable in git diffs.
+#
+#   echo ".env.secrets" >> .gitignore
+
+services:
+  assistant:
+    build:
+      context: .
+      dockerfile: app/Dockerfile
+    image: juice-shop-assistant:rag
+    depends_on:
+      - chroma
+      - juice-shop
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    env_file:
+      - .env.secrets          # OPENROUTER_API_KEY, INGEST_API_KEY (git-ignored)
+    environment:
+      APP_ENV: "production"
+
+      OPENROUTER_BASE_URL: "https://openrouter.ai/api/v1"
+      MODEL_NAME: "qwen/qwen3-8b"
+      LLM_TIMEOUT_SECONDS: "30"
+      LLM_MAX_RETRIES: "2"
+
+      PRODUCT_API_URL: "http://juice-shop:3000/api/Products"
+
+      CHROMA_SERVER_HOST: "chroma"
+      CHROMA_SERVER_HTTP_PORT: "8000"
+      CHROMA_COLLECTION_NAME: "juice-shop-products"
+
+      RETRIEVAL_CANDIDATE_COUNT: "8"
+      RETRIEVAL_TOP_K: "3"
+      FUZZY_MATCH_THRESHOLD: "0.72"
+
+      RATE_LIMIT_PER_MINUTE: "30"
+      MAX_MESSAGE_LENGTH: "2000"
+
+      CONVERSATION_MAX_TURNS: "6"
+      CONVERSATION_TTL_SECONDS: "1800"
+
+      LOG_LEVEL: "INFO"
+      LOG_JSON: "true"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health/ready', timeout=4).status==200 else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  chroma:
+    image: chromadb/chroma:latest
+    ports:
+      - "8001:8000"
+    restart: unless-stopped
+    environment:
+      CHROMA_SERVER_HOST: "0.0.0.0"
+      CHROMA_SERVER_HTTP_PORT: "8000"
+      CHROMA_DISABLE_TELEMETRY: "true"
+      CHROMA_DB_IMPL: "duckdb+parquet"
+    volumes:
+      - chroma-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v2/heartbeat"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  juice-shop:
+    restart: unless-stopped
+    # ... unchanged (build, image, depends_on, ports, environment with
+    # NODE_ENV: "rag" and LLM_API_KEY from your existing setup) ...

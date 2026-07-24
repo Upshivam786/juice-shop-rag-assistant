@@ -3,6 +3,7 @@ node_modules/
 *.sqlite
 order_*.pdf
 app/
+!/app
 !frontend/src/app
 uploads/complaints/*.*
 !uploads/complaints/.gitkeep
@@ -50,6 +51,7 @@ assets/
 
 # Custom configuration files
 config/*.yml
+!config/rag.yml
 !config/addo.yml
 !config/bodgeit.yml
 !config/ctf.yml
@@ -73,3 +75,18 @@ config/*.yml
 cypress/screenshots/
 
 .env.openai
+# Secrets - never commit
+.env
+.env.secrets
+
+# Virtual environments
+.venv/
+.venv-test/
+
+# Local backups
+app.backup-*/
+requirements.txt.backup
+
+# Python bytecode
+__pycache__/
+*.pyc

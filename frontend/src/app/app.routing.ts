@@ -242,6 +242,7 @@ const routes: Routes = [
   {
     path: 'chatbot',
     component: ChatbotComponent,
+    outlet: 'chat',
     children: [
       { path: '', component: ChatWelcomePageComponent },
       { path: 'conversation/:id', component: ChatConversationComponent }

@@ -13,4 +13,19 @@
   <app-challenge-solved-notification></app-challenge-solved-notification>
   <app-welcome></app-welcome>
   <router-outlet></router-outlet>
+
+  <div class="ai-assistant-widget">
+    <a mat-fab color="primary" [routerLink]="['/', { outlets: { chat: ['chatbot'] } }]" aria-label="Open Shivam AI assistant">
+      <mat-icon>support_agent</mat-icon>
+    </a>
+    <span>Shivam AI Assistant</span>
+  </div>
+
+  <div class="chat-side-panel" [class.open]="isChatOpen()">
+    <button mat-icon-button class="chat-panel-close" aria-label="Close assistant panel"
+      [routerLink]="['/', { outlets: { chat: null } }]">
+      <mat-icon>close</mat-icon>
+    </button>
+    <router-outlet name="chat" (activate)="isChatOpen.set(true)" (deactivate)="isChatOpen.set(false)"></router-outlet>
+  </div>
 </mat-sidenav-container>

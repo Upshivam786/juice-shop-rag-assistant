@@ -22,10 +22,10 @@ export class ChatWelcomePageComponent {
 
   onMessageSent (message: string) {
     const id = this.conversationStorage.generateId()
-    void this.router.navigate(['/chatbot/conversation', id], { queryParams: { initialMessage: message } })
+    void this.router.navigate(['/', { outlets: { chat: ['chatbot', 'conversation', id] } }], { queryParams: { initialMessage: message } })
   }
 
   onConversationSelected (id: string) {
-    void this.router.navigate(['/chatbot/conversation', id])
+    void this.router.navigate(['/', { outlets: { chat: ['chatbot', 'conversation', id] } }])
   }
 }

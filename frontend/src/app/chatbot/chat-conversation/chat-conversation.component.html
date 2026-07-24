@@ -1,5 +1,5 @@
 <div class="chat-header">
-  <a routerLink="/chatbot" class="back-link" aria-label="Back to chatbot">
+  <a [routerLink]="['/', { outlets: { chat: ['chatbot'] } }]" class="back-link" aria-label="Back to chatbot">
     <mat-icon>chevron_left</mat-icon>
   </a>
   <img [src]="chatBotAvatar()" [alt]="'CHATBOT_AVATAR_ALT' | translate" class="header-avatar" />

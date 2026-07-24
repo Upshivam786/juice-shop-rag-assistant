@@ -11,6 +11,11 @@
   flex-direction: column;
   overflow: hidden;
   min-height: 0;
+  background: var(--theme-background-lighter);
+  border-radius: 16px;
+  border: 1px solid var(--theme-text-fade-20);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  padding: 0 $space-l;
 }
 
 // Chat header
@@ -19,7 +24,8 @@
   display: flex;
   align-items: center;
   gap: $space-s;
-  padding: $space-s 0;
+  padding: $space-m 0;
+  border-bottom: 1px solid var(--theme-text-fade-20);
   flex-shrink: 0;
 }
 
@@ -32,12 +38,14 @@
 }
 
 .header-avatar {
-  height: 28px;
+  height: 36px;
+  border-radius: 50%;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
 }
 
 .header-title {
-  font-size: 15px;
-  font-weight: 500;
+  font-size: 17px;
+  font-weight: 600;
 }
 
 // Chat window
@@ -47,28 +55,31 @@
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: $space-s;
-  padding: $space-xs 0;
+  gap: $space-m;
+  padding: $space-m 0;
   min-height: 0;
 }
 
 .chat-bubble {
-  max-width: 75%;
-  padding: $space-s $space-m;
-  border-radius: 12px;
+  max-width: 70%;
+  padding: $space-m $space-l;
+  border-radius: 16px;
   word-wrap: break-word;
   white-space: pre-wrap;
+  font-size: 14.5px;
+  line-height: 1.5;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 
   &.user {
     align-self: flex-end;
-    background-color: var(--theme-primary);
+    background: linear-gradient(135deg, var(--theme-primary), var(--theme-primary));
     color: var(--mat-sys-on-primary);
     border-bottom-right-radius: 4px;
   }
 
   &.assistant {
     align-self: flex-start;
-    background-color: var(--theme-background-lighter);
+    background-color: var(--theme-background-darker);
     color: var(--theme-text);
     border-bottom-left-radius: 4px;
     border: 1px solid var(--theme-text-fade-20);
@@ -214,6 +225,7 @@
 // Input area
 
 .input-area {
-  padding: $space-s 0 $space-l;
+  padding: $space-m 0 $space-l;
+  border-top: 1px solid var(--theme-text-fade-20);
   flex-shrink: 0;
 }
