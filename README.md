@@ -1,4 +1,44 @@
-> **Note:** This fork adds a custom FastAPI + ChromaDB + OpenRouter RAG assistant replacing Juice Shop's default chatbot integration. See [RAG_ASSISTANT.md](./RAG_ASSISTANT.md) for details.
+# ![Juice Shop Logo](https://raw.githubusercontent.com/juice-shop/juice-shop/master/frontend/src/assets/public/images/JuiceShop_Logo_100px.png) OWASP Juice Shop — RAG Assistant Edition
+
+A production-style **Retrieval-Augmented Generation (RAG)** backend built on top of [OWASP Juice Shop](https://github.com/juice-shop/juice-shop), replacing its default chatbot LLM integration with a custom FastAPI + ChromaDB + OpenRouter service.
+
+## What this fork adds
+
+- Custom FastAPI backend, OpenAI-compatible API surface
+- ChromaDB retrieval with exact/fuzzy product-name matching, semantic fallback, and reranking
+- Real-time streaming (Server-Sent Events)
+- Multi-turn conversation memory
+- Product ingestion pipeline from Juice Shop's own catalog
+- Security: API key auth, rate limiting, structured logging
+- Health/readiness checks, hardened Docker deployment
+- Custom-branded side-panel chatbot UI
+- 27 automated tests
+
+## Documentation
+
+| Document | What's in it |
+|---|---|
+| [CONTRIBUTIONS.md](./CONTRIBUTIONS.md) | Exactly what was engineered on top of Juice Shop, chronologically |
+| [ARCHITECTURE.md](./ARCHITECTURE.md) | System design, request flows, diagrams |
+| [RAG_ASSISTANT.md](./RAG_ASSISTANT.md) | Implementation detail: retrieval strategy, prompt engineering, streaming, design trade-offs |
+| [MIGRATION.md](./MIGRATION.md) | How this patch was applied to a working Juice Shop instance |
+
+## Quick start
+
+```bash
+git clone https://github.com/Upshivam786/juice-shop-rag-assistant.git
+cd juice-shop-rag-assistant
+cp .env.secrets.example .env.secrets   # fill in OPENROUTER_API_KEY, INGEST_API_KEY
+docker compose -f docker-compose.rag.yml up -d --build
+curl -X POST http://localhost:8000/assistant/ingest -H "X-API-Key: <your key>"
+```
+Then open `http://localhost:3000` and use the chatbot.
+
+## Original project
+
+This repository is a fork of **[OWASP Juice Shop](https://github.com/juice-shop/juice-shop)**, an intentionally insecure web application used for security training, awareness demos, and CTFs. All of Juice Shop's original functionality, challenges, and documentation are unchanged and preserved below.
+
+---
 
 # ![Juice Shop Logo](https://raw.githubusercontent.com/juice-shop/juice-shop/master/frontend/src/assets/public/images/JuiceShop_Logo_100px.png) OWASP Juice Shop
 

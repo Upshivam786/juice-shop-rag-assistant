@@ -1,174 +1,77 @@
-# Productionization patch — what changed and why
+# RAG Assistant — Implementation Guide
 
-This is an incremental patch on top of your working RAG assistant, not a
-rewrite. FastAPI, ChromaDB, and OpenRouter are unchanged. Every point below
-maps to specific files.
+This document explains **how** and **why** the FastAPI RAG backend works the way it does. For a high-level list of what was built, see [CONTRIBUTIONS.md](./CONTRIBUTIONS.md). For system diagrams, see [ARCHITECTURE.md](./ARCHITECTURE.md).
 
-## 1. Retrieval quality — `app/services/chroma_service.py`
-Three-tier strategy, in order:
-1. **Substring match** against known product names (cached in memory,
-   refreshed on ingest) — catches exact/partial product names precisely.
-2. **Fuzzy match** via `difflib` (stdlib, no new dependency) — catches
-   misspellings like "eggfriut juice".
-3. **Semantic fallback** — pulls `RETRIEVAL_CANDIDATE_COUNT` (default 8)
-   candidates by embedding similarity when no product name is confidently
-   identified, then reranks down to `RETRIEVAL_TOP_K` (default 3).
+## Retrieval strategy
 
-Why this order: pure semantic search is the classic RAG failure mode for
-product catalogs — "apple juice" can retrieve "Apple Pomace" as the nearest
-neighbor because the embeddings are close, even though the user clearly
-named a different, exact product. Checking for a named product first avoids
-that whenever possible.
+Naive RAG (embed the query, take the top-k nearest vectors) fails on small product catalogs in a specific, common way: a query like *"apple juice"* can retrieve *"Apple Pomace"* as the nearest neighbor, because their embeddings are close, even though the user clearly named a different, exact product.
 
-## 2. Prompt engineering — `app/prompts.py`
-`SYSTEM_PROMPT` explicitly: prohibits inventing prices/details, gives a
-literal fallback line for "I don't know" cases, forbids revealing
-instructions/implementation details, and gives one worked correct/incorrect
-example (repetition of the rule at both an abstract and concrete level
-reduces slip-through in practice more than stating it once).
+To address this, retrieval runs in three tiers, in order, implemented in `app/services/chroma_service.py`:
 
-## 3. No more `[Document 1]` in answers — `app/prompts.py`
-Root cause: the original prompt literally said "cite the relevant product
-information," which the model interpreted as "mention Document N." Fixed by
-removing that instruction and replacing it with an explicit rule never to
-reference retrieval mechanics. See `tests/test_prompts.py::test_context_has_no_document_n_tokens` for a regression test.
+1. **Substring match.** Known product names are cached in memory (refreshed on ingest). If a product's name (minus its size/variant suffix, e.g. `(500ml)`) appears in the query, that product is fetched directly via a ChromaDB metadata filter — no embedding involved.
+2. **Fuzzy match.** If no substring match is found, `difflib` (Python's standard library, no new dependency) checks query n-grams against known product names with a configurable similarity threshold (default `0.72`). This catches misspellings like "eggfriut juice."
+3. **Semantic fallback.** Only if neither of the above finds a confident match does the system fall back to embedding the query and performing nearest-neighbor search — pulling more candidates than needed (`RETRIEVAL_CANDIDATE_COUNT`, default 8) and reranking down to the final count (`RETRIEVAL_TOP_K`, default 3).
 
-## 4. Context formatting — `app/prompts.py::format_product_context`
-Changed from `Document 1: <free text blob>` to a labeled `name: / price: /
-description:` block per product with no "Document" token anywhere. Easier
-for the model to extract exact figures from, and removes the surface form
-it was echoing back.
+### Reranking
 
-## 5. Multi-turn conversation — `app/services/conversation_service.py`
-Deliberately not a framework — an in-memory dict of
-`conversation_id -> recent turns + last product mentioned`, capped at
-`CONVERSATION_MAX_TURNS` turn-pairs with a TTL sweep. Prior turns are
-included verbatim in the prompt sent to the LLM, so "how much does it cost?"
-resolves naturally — the LLM does the pronoun resolution, we just supply
-the context. If the current query has no product name and the LLM's last
-turn implies a product was already discussed, we also inject a hint using
-the tracked `last_product_name` before retrieval runs.
-**Stated trade-off**: this state is process-local. Fine for one instance;
-if you ever run multiple replicas, swap the backing dict for Redis without
-touching call sites (`get_history`/`record_turn` signatures stay the same).
+Rather than trusting raw cosine distance as final ranking, candidates are rescored using a combination of vector distance and keyword overlap between the query and each candidate's name/description. This is deliberately lightweight — no cross-encoder model, no additional dependency. If retrieval quality still isn't sufficient at scale, the natural upgrade is a `sentence-transformers` `CrossEncoder` (e.g. `cross-encoder/ms-marco-MiniLM-L-6-v2`) scoring the same candidate set; the `_rerank()` function's signature was written so that swap wouldn't require changing any call sites.
 
-## 6. Reranking — `app/services/chroma_service.py::_rerank`
-Combines Chroma's cosine distance with a keyword-overlap bonus computed
-against product name/description. Deliberately lightweight (no new
-cross-encoder model/dependency) per your "don't overengineer" constraint.
-Upgrade path if quality still isn't sufficient: swap `_rerank()`'s internals
-for a `sentence-transformers` `CrossEncoder` (e.g.
-`cross-encoder/ms-marco-MiniLM-L-6-v2`) scoring the same candidate list —
-the function signature doesn't need to change for callers.
+## Prompt engineering
 
-## 7. Performance — `app/config.py`, `app/services/*`, `app/services/llm_service.py`
-- `Settings` parsed once via `@lru_cache`, not re-read from env per request.
-- Chroma client/collection built once via `@lru_cache`, not per-request
-  (the original code called `get_chroma_client()`/`get_chroma_collection()`
-  on every single call).
-- OpenAI SDK client cached per `(api_key, base_url)` — constructing it opens
-  an httpx connection pool; doing that per-request was wasted work.
-- Embedding model warmed once at startup (`lifespan` in `main.py`) instead
-  of lazily on the first request.
+The system prompt (`app/prompts.py`) is designed around one core principle: **the model's only source of truth is the retrieved product context**, and it must be told this explicitly and repeatedly, because LLMs default to "being helpful" by guessing plausible numbers when data is missing.
 
-## 8. Streaming — `app/services/llm_service.py::stream_llm_response`
-The original streamed a single fake chunk after running the whole
-completion synchronously — not real token streaming, and no handling for a
-client disconnecting mid-response. This version streams real incremental
-SSE chunks from the OpenAI SDK's `stream=True` mode, checks
-`request.is_disconnected()` between chunks to stop generating (and stop
-paying for tokens) if the user closed the panel, and wraps the whole
-generator so a mid-stream provider error still emits a graceful error chunk
-+ `[DONE]` instead of hanging the client's `EventSource` open. Covered by
-`tests/test_llm_service.py`.
+Key techniques used:
+- **Explicit hallucination prevention** — a direct rule against inventing prices/details, reinforced with one worked correct/incorrect example. Repetition at both the abstract (the rule) and concrete (the example) level measurably reduces slip-through compared to stating the rule once.
+- **A literal fallback phrase** for "I don't know" cases, so the model has a concrete sentence to fall back to instead of improvising a hedge that might still leak a guessed number.
+- **No retrieval-mechanism leakage** — the model is told the product context is internal data it must never reference by name ("Document 1," "according to the context"). This directly fixed an earlier bug where answers included literal `[Document 1]` citations, traced back to an instruction that told the model to "cite the relevant product information" — which it interpreted as citing document numbers.
+- **Context isolation** — retrieved product context is passed as a separate `system`-role message, not concatenated into the user's turn. This keeps it clearly separated from user-authored text, which also reduces the chance of a prompt-injection payload embedded in a user message being mistaken for an instruction.
 
-## 9. Error handling — `app/services/llm_service.py`, `app/main.py`
-- `LLMServiceError` wraps every OpenRouter/SDK exception with a safe,
-  user-facing message; full technical detail goes to the logger only.
-- A global `@app.exception_handler(Exception)` in `main.py` guarantees no
-  unhandled exception anywhere in the app ever reaches the client as a raw
-  traceback — it's caught, logged with the request path, and turned into a
-  generic 500 response.
+### Context formatting
 
-## 10. Logging & observability — `app/logging_config.py`
-Structured JSON logs (one `logging.StreamHandler` + custom `JSONFormatter`)
-instead of `print()` debugging statements. Every log line has a consistent
-`event` field so you can query "all `retrieval_complete` events in the last
-hour" from a log platform. Logged today: retrieved product count and match
-strategy + retrieval latency (`chroma_service.py`), LLM latency + token
-usage (`llm_service.py`), full exception detail on any failure. Quiet
-third-party loggers (`httpx`, `chromadb`) unless `LOG_LEVEL=DEBUG`.
+Retrieved products are formatted as labeled `name: / description: / price: / deluxe_price:` blocks — not `Document 1: <free text>`. This removes the "Document N" token from the model's input entirely (so there's nothing to echo back) and makes exact figures easier for the model to extract accurately than parsing them out of a prose paragraph.
 
-## 11. Security — `app/security.py`
-- `POST /assistant/ingest` now requires an `X-API-Key` header matching
-  `INGEST_API_KEY` (was completely open before).
-- Simple in-memory sliding-window rate limiter per client IP on the chat
-  endpoints (`RATE_LIMIT_PER_MINUTE`, default 30/min). **Stated trade-off**:
-  resets on restart, doesn't coordinate across replicas — fine for one
-  instance, swap for Redis `INCR`+`EXPIRE` if you scale out.
-- Message length capped both at the Pydantic model level
-  (`ChatMessage.content` max_length) and again in `security.py` for defense
-  in depth.
-- Prompt injection: mitigated by putting retrieved product context in a
-  `system`-role message (not concatenated into user text) and explicit
-  system-prompt instructions not to follow embedded commands or reveal
-  instructions. This is a mitigation, not a guarantee — treat the chatbot as
-  low-privilege; never give it tool access to place orders/refunds without
-  a confirmation step outside the LLM's control.
+## Multi-turn conversation memory
 
-## 12. Configuration — `app/config.py`
-All env vars now flow through one `pydantic-settings` `Settings` class:
-validated types, documented defaults, and secrets (`SecretStr`) that never
-get accidentally logged. `docker-compose.additions.yml` shows separating
-non-secret tuning values (compose `environment:`) from real secrets
-(`.env.secrets`, git-ignored, loaded via `env_file:`).
+Implemented in `app/services/conversation_service.py` as a plain in-memory dictionary — deliberately not a framework (no LangChain memory classes, no vector-backed chat history). Each conversation ID maps to:
+- The last few turn-pairs (capped at `CONVERSATION_MAX_TURNS`, with a TTL sweep for cleanup)
+- The last product name mentioned
 
-## 13. Code organization
-```
-app/
-  config.py             # Settings (Point 12)
-  logging_config.py      # Structured logging (Point 10)
-  models.py               # Pydantic request/response + RetrievedProduct
-  prompts.py               # System prompt + context formatting (Points 2,3,4)
-  security.py               # Auth + rate limiting (Point 11)
-  main.py                     # Routes only - thin, delegates to services
-  services/
-    chroma_service.py         # Retrieval + reranking (Points 1, 6)
-    embedding_service.py       # Unchanged embedding logic, relocated
-    llm_service.py               # LLM calls + streaming (Points 7, 8, 9)
-    conversation_service.py       # Multi-turn memory (Point 5)
-tests/
-  test_retrieval.py, test_prompts.py, test_llm_service.py,
-  test_conversation_service.py, test_api_integration.py
-```
-No `api/`/`models/` split beyond this per your "without overengineering"
-note — this is the smallest structure that separates concerns cleanly for a
-project this size.
+Recent turns are included verbatim in the prompt sent to the LLM — the **LLM itself** resolves references like "how much does it cost?" using that context; there is no separate coreference-resolution step. If the current query has no product name of its own, the last product mentioned is injected as a retrieval hint before the search runs.
 
-## 14. Testing — `tests/`
-27 tests, all passing (verified in this environment): retrieval name
-matching + reranking, prompt formatting/regression tests for the
-`[Document 1]` bug, LLM service with **mocked OpenRouter calls** (no real
-API calls in tests), streaming disconnect handling, conversation memory,
-and end-to-end API integration tests via `TestClient` (auth enforcement,
-error handling, request validation). Run with:
-```bash
-pip install -r requirements.txt
-pytest tests/ -v
-```
+**Trade-off, stated plainly:** this state is process-local. It does not survive a restart and does not coordinate across multiple replicas. That's an acceptable trade-off for a single-instance deployment. If scaled horizontally, the same `get_history()`/`record_turn()` function signatures could be backed by Redis instead of an in-process dict without touching any call sites.
 
-## 15. Deployment — `app/Dockerfile`, `docker-compose.additions.yml`
-- `PYTHONUNBUFFERED=1` so logs flush immediately for `docker logs -f`.
-- Runs as a non-root `appuser`.
-- `HEALTHCHECK` wired to the new `/health/ready` endpoint, which actually
-  checks Chroma reachability + an LLM key being configured — not just
-  "process is up." `/health` (liveness) is unchanged/simple on purpose.
-- `--timeout-graceful-shutdown 10` on uvicorn so in-flight requests
-  (including SSE streams) get a window to finish on `SIGTERM` instead of
-  being killed mid-response when the container restarts.
-- `restart: unless-stopped` + healthchecks added for all three services in
-  `docker-compose.additions.yml`.
-- Embedding model bake-in step unchanged (already fixed the ONNX
-  re-download bug in an earlier pass).
+## Streaming implementation
 
-See `MIGRATION.md` for exact commands to apply this to your actual repo.
+`app/services/llm_service.py::stream_llm_response` streams real, incremental Server-Sent Events from the OpenAI SDK's `stream=True` mode (an earlier version of this code ran the full completion synchronously first, then emitted a single fake "streamed" chunk afterward — not real streaming).
+
+Handled explicitly:
+- **Client disconnects** — `request.is_disconnected()` is checked between chunks; generation stops immediately (and stops incurring token cost) if the user closes the chat panel mid-response.
+- **Mid-stream provider errors** — wrapped in try/except so a failure partway through still emits a graceful SSE error chunk followed by `[DONE]`, rather than leaving the client's `EventSource` connection hanging open indefinitely.
+- **Cleanup/observability** — a `finally` block logs total stream latency and an estimated completion-token count regardless of how the stream ended.
+
+## Error handling & observability
+
+- Every LLM/OpenRouter exception is caught and translated into a safe, generic user-facing message (`LLMServiceError`); full technical detail is logged server-side only.
+- A global FastAPI exception handler guarantees no unhandled exception anywhere in the app — including bugs in application code, not just the LLM call — ever reaches the client as a raw stack trace.
+- Structured JSON logging (`app/logging_config.py`) gives every log line a consistent `event` field (e.g. `retrieval_complete`, `llm_call_complete`, `unhandled_exception`), enabling queries like "p95 retrieval latency in the last hour" against a real log platform instead of grepping unstructured text.
+
+## Security
+
+- `POST /assistant/ingest` requires an `X-API-Key` header (was previously unauthenticated).
+- Per-client-IP sliding-window rate limiting on chat endpoints (in-memory; documented as swappable for Redis if scaled out).
+- Message length capped at both the Pydantic model level and again in the security layer for defense in depth.
+- Prompt-injection mitigation via context isolation (see Prompt Engineering, above) and explicit system-prompt instructions not to reveal internal instructions or follow embedded commands. This is a mitigation, not a guarantee — the chatbot is treated as a low-privilege component with no ability to take real actions (place orders, issue refunds) without a confirmation step outside the LLM's control.
+
+## Performance
+
+- `Settings`, the ChromaDB client/collection, and the OpenAI SDK client are all constructed once per process (via `functools.lru_cache`) rather than per-request — the original code rebuilt all three on every single call.
+- The embedding model is warmed once at application startup instead of lazily on the first real user request.
+
+## Testing
+
+27 tests (`pytest`), all with OpenRouter fully mocked (no real API calls in the test suite):
+- Retrieval logic — exact/fuzzy name matching, reranking behavior
+- Prompt formatting — including a regression test asserting no `[Document 1]`-style tokens ever appear in formatted context
+- Streaming — including a test that simulates a client disconnecting mid-stream
+- Conversation memory — history capping, pronoun-resolution product tracking
+- End-to-end API integration — auth enforcement, validation, error handling — via FastAPI's `TestClient`
