@@ -34,6 +34,12 @@ curl -X POST http://localhost:8000/assistant/ingest -H "X-API-Key: <your key>"
 ```
 Then open `http://localhost:3000` and use the chatbot.
 
+## Screenshots
+
+![Shivam AI Assistant side panel](./screenshots/rag-assistant-chatbot.png)
+
+The RAG assistant answers product questions grounded in Juice Shop's actual catalog, streamed in real time via a custom side-panel UI.
+
 ## Original project
 
 This repository is a fork of **[OWASP Juice Shop](https://github.com/juice-shop/juice-shop)**, an intentionally insecure web application used for security training, awareness demos, and CTFs. All of Juice Shop's original functionality, challenges, and documentation are unchanged and preserved below.
