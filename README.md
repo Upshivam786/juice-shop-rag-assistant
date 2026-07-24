@@ -1,27 +1,56 @@
-# ![Juice Shop Logo](https://raw.githubusercontent.com/juice-shop/juice-shop/master/frontend/src/assets/public/images/JuiceShop_Logo_100px.png) OWASP Juice Shop — RAG Assistant Edition
+# 🍹 OWASP Juice Shop — RAG Assistant Edition
 
-A production-style **Retrieval-Augmented Generation (RAG)** backend built on top of [OWASP Juice Shop](https://github.com/juice-shop/juice-shop), replacing its default chatbot LLM integration with a custom FastAPI + ChromaDB + OpenRouter service.
+A production-style Retrieval-Augmented Generation (RAG) backend built on top of **OWASP Juice Shop**, replacing its default chatbot integration with a custom **FastAPI + ChromaDB + OpenRouter** service.
 
-## What this fork adds
+<p align="center">
+  <img src="docs/images/chatbot-overview.png" width="950" alt="Shivam AI Assistant answering a product question in the Juice Shop side panel">
+</p>
 
-- Custom FastAPI backend, OpenAI-compatible API surface
-- ChromaDB retrieval with exact/fuzzy product-name matching, semantic fallback, and reranking
-- Real-time streaming (Server-Sent Events)
-- Multi-turn conversation memory
-- Product ingestion pipeline from Juice Shop's own catalog
-- Security: API key auth, rate limiting, structured logging
-- Health/readiness checks, hardened Docker deployment
-- Custom-branded side-panel chatbot UI
-- 27 automated tests
+<p align="center">
+  <em>Custom FastAPI RAG assistant integrated into OWASP Juice Shop with streaming responses and product-aware retrieval.</em>
+</p>
+
+## Project overview
+
+This repository takes the official [OWASP Juice Shop](https://github.com/juice-shop/juice-shop) — an intentionally vulnerable training application — and replaces its chatbot's LLM backend with a custom Retrieval-Augmented Generation service. Instead of the assistant answering from raw LLM knowledge, it retrieves grounded, accurate information from Juice Shop's own product catalog before generating a response.
+
+## 🚀 Engineering Highlights
+
+- ✅ FastAPI backend with OpenAI-compatible APIs
+- ✅ ChromaDB retrieval with exact, fuzzy, and semantic search
+- ✅ Product ingestion pipeline from the Juice Shop catalog
+- ✅ Real-time streaming responses (Server-Sent Events)
+- ✅ Multi-turn conversation memory
+- ✅ OpenRouter integration (Qwen 3-8B)
+- ✅ API key authentication and rate limiting
+- ✅ Health & readiness endpoints
+- ✅ Custom Angular side-panel chatbot UI
+- ✅ Docker Compose deployment
+- ✅ 27 automated tests
+
+## 🏗 Architecture
+
+```mermaid
+flowchart LR
+    User --> JuiceShop[Juice Shop Frontend]
+    JuiceShop --> FastAPI[FastAPI RAG Backend]
+    FastAPI --> ChromaDB[(ChromaDB)]
+    FastAPI --> OpenRouter[OpenRouter - Qwen 3-8B]
+    ChromaDB --> FastAPI
+    OpenRouter --> FastAPI
+    FastAPI --> JuiceShop
+```
+
+Full request flows, ingestion pipeline, and design rationale are in [ARCHITECTURE.md](./ARCHITECTURE.md).
 
 ## Documentation
 
-| Document | What's in it |
+| Document | Purpose |
 |---|---|
-| [CONTRIBUTIONS.md](./CONTRIBUTIONS.md) | Exactly what was engineered on top of Juice Shop, chronologically |
-| [ARCHITECTURE.md](./ARCHITECTURE.md) | System design, request flows, diagrams |
-| [RAG_ASSISTANT.md](./RAG_ASSISTANT.md) | Implementation detail: retrieval strategy, prompt engineering, streaming, design trade-offs |
-| [MIGRATION.md](./MIGRATION.md) | How this patch was applied to a working Juice Shop instance |
+| [CONTRIBUTIONS.md](./CONTRIBUTIONS.md) | Chronological record of all engineering work added after cloning Juice Shop |
+| [ARCHITECTURE.md](./ARCHITECTURE.md) | System architecture, request flow, and design decisions |
+| [RAG_ASSISTANT.md](./RAG_ASSISTANT.md) | Retrieval strategy, prompt engineering, streaming, and implementation details |
+| [MIGRATION.md](./MIGRATION.md) | Setup and migration guide |
 
 ## Quick start
 
@@ -34,11 +63,34 @@ curl -X POST http://localhost:8000/assistant/ingest -H "X-API-Key: <your key>"
 ```
 Then open `http://localhost:3000` and use the chatbot.
 
-## Screenshots
+## 📸 Demo
 
-![Shivam AI Assistant side panel](./screenshots/rag-assistant-chatbot.png)
+### Product-aware, multi-turn conversation
 
-The RAG assistant answers product questions grounded in Juice Shop's actual catalog, streamed in real time via a custom side-panel UI.
+![Conversation](docs/images/chatbot-overview.png)
+
+The assistant grounds every answer in the actual product catalog — prices, descriptions, and recommendations all come from retrieval, not guesswork — and correctly resolves follow-up questions like "how much does it cost?" using conversation memory.
+
+## 💡 Why this project?
+
+OWASP Juice Shop already supports LLM integrations out of the box. This project demonstrates how to replace that backend with a production-style Retrieval-Augmented Generation system while preserving the existing user experience end to end.
+
+The focus was on:
+- OpenAI-compatible APIs, so the existing frontend needed zero rewrites
+- Modular FastAPI services, not a monolithic script
+- Grounded responses using ChromaDB, not raw LLM recall
+- Real-time streaming
+- Secure ingestion and rate-limited endpoints
+- Production-ready deployment: health checks, structured logging, graceful shutdown
+
+## 🛠 Key Technical Challenges
+
+- Designing an OpenAI-compatible API layer that Juice Shop's existing chatbot could call without modification
+- Building a product ingestion pipeline from a live, changing catalog
+- Improving retrieval accuracy with exact, fuzzy, and semantic matching (naive vector search alone retrieves the wrong products on a small catalog)
+- Implementing real Server-Sent Events streaming, including client-disconnect handling
+- Maintaining multi-turn conversation context without a heavy memory framework
+- Integrating a custom backend into Juice Shop's Angular frontend as a non-intrusive side panel, without disrupting the existing UI
 
 ## Original project
 
