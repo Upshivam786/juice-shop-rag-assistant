@@ -16,7 +16,7 @@
   z-index: 1200;
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: $space-s;
 }
 
 .ai-assistant-widget a {
@@ -28,10 +28,10 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0.5rem 0.75rem;
+  padding: $space-xs $space-s;
   border-radius: 999px;
   background: rgba(0, 0, 0, 0.72);
-  color: white;
+  color: #fff;
   font-size: 0.9rem;
   white-space: nowrap;
   box-shadow: 0 12px 20px rgba(0, 0, 0, 0.16);
@@ -51,7 +51,7 @@
   z-index: 1000;
   display: flex;
   flex-direction: column;
-  padding: 12px 16px;
+  padding: $space-s $space-m;
 
   &.open {
     transform: translateX(0);
@@ -60,5 +60,5 @@
 
 .chat-panel-close {
   align-self: flex-end;
-  margin-bottom: 4px;
+  margin-bottom: $space-2xs;
 }
