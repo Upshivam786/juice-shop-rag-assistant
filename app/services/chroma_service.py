@@ -54,6 +54,28 @@ logger = get_logger(__name__)
 
 _WORD_RE = re.compile(r"[a-zA-Z]+")
 
+# Words to exclude from keyword-overlap scoring in _rerank(). Two categories:
+# 1. Catalog branding ("juice", "shop", "owasp") - appears in nearly every
+#    product's name/description because of the "OWASP Juice Shop" branding,
+#    so it matches almost anything and provides zero discriminative signal.
+#    Without this, non-juice items (a CTF book, a t-shirt) can rank above
+#    actual juice products purely because their title contains "Juice Shop."
+# 2. Generic query filler words that carry no product-identifying meaning.
+_KEYWORD_OVERLAP_STOPWORDS = {
+    # NOTE: "juice" is deliberately NOT in this list. It's ambiguous in this
+    # catalog - meaningless noise in branding items like "Pwning OWASP Juice
+    # Shop," but a genuinely meaningful product-category word in real juice
+    # products like "Apple Juice." Excluding it entirely broke the ability
+    # to distinguish "Apple Juice" from "Apple Pomace" on an "apple juice"
+    # query. "owasp" and "shop" are the actual branding-only artifact - they
+    # never appear in real juice product names, only in merchandise/book titles.
+    "shop", "owasp",
+    "the", "a", "an", "of", "for", "is", "are", "do", "does", "you", "your",
+    "what", "which", "would", "recommend", "need", "have", "has", "i", "me",
+    "my", "with", "help", "please", "can", "could", "to", "it", "its", "how",
+    "much", "about", "tell",
+}
+
 
 @lru_cache(maxsize=1)
 def get_chroma_client() -> chromadb.HttpClient:
@@ -118,8 +140,8 @@ def _find_named_product(query: str) -> Optional[str]:
 
 
 def _keyword_overlap_score(query: str, product: RetrievedProduct) -> float:
-    query_tokens = set(_WORD_RE.findall(query.lower()))
-    text_tokens = set(_WORD_RE.findall(f"{product.name} {product.description}".lower()))
+    query_tokens = set(_WORD_RE.findall(query.lower())) - _KEYWORD_OVERLAP_STOPWORDS
+    text_tokens = set(_WORD_RE.findall(f"{product.name} {product.description}".lower())) - _KEYWORD_OVERLAP_STOPWORDS
     if not query_tokens or not text_tokens:
         return 0.0
     overlap = len(query_tokens & text_tokens)
@@ -233,6 +255,27 @@ def retrieve_relevant_products(query: str) -> list[RetrievedProduct]:
     ]
 
     top_products = _rerank(query, candidates, settings.retrieval_top_k) if match_reason == "semantic" else candidates[: settings.retrieval_top_k]
+
+    # Confidence gate: exact/fuzzy name matches are confident by construction
+    # (the user named a real product). Semantic-fallback matches are not -
+    # nearest-neighbor search always returns *something*, even when nothing
+    # is actually relevant (e.g. "I need help with my order" still returns
+    # the 3 least-dissimilar products, all of which are genuinely unrelated).
+    # If the best semantic match's distance is worse than our threshold,
+    # treat it as no match at all rather than handing weak, misleading
+    # context to the LLM.
+    if match_reason == "semantic" and top_products:
+        best_distance = top_products[0].distance
+        if best_distance is not None and best_distance > settings.retrieval_distance_threshold:
+            logger.info(
+                "retrieval_low_confidence_discarded",
+                extra={
+                    "event": "retrieval_low_confidence_discarded",
+                    "best_distance": best_distance,
+                    "threshold": settings.retrieval_distance_threshold,
+                },
+            )
+            top_products = []
 
     elapsed_ms = round((time.perf_counter() - start) * 1000, 1)
     logger.info(

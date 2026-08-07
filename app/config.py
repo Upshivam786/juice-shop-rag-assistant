@@ -63,6 +63,13 @@ class Settings(BaseSettings):
         default=0.72, alias="FUZZY_MATCH_THRESHOLD",
         description="difflib SequenceMatcher ratio above which we treat a query token as naming a specific product",
     )
+    retrieval_distance_threshold: float = Field(
+        default=1.2, alias="RETRIEVAL_DISTANCE_THRESHOLD",
+        description="L2 distance above which the best semantic-search match is treated as not "
+                     "actually relevant, rather than being fed to the LLM as if it were real context. "
+                     "Calibrated empirically: observed good matches ~0.68-0.99, observed genuinely "
+                     "irrelevant matches ~1.47-1.50, on this catalog with all-MiniLM-L6-v2 embeddings.",
+    )
 
     # --- Security ---
     ingest_api_key: Optional[SecretStr] = Field(
